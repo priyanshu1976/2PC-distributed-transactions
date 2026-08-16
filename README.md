@@ -58,15 +58,8 @@ Each shard does one thing per order:
 
 ## The idea
 
-```mermaid
-flowchart TD
-    A[Order arrives] --> B[Phase 1: PREPARE<br/>ask every participant<br/>'can you commit this?']
-    B --> C{all voted YES?}
-    C -- yes --> D[Phase 2: COMMIT PREPARED]
-    C -- no --> E[Phase 2: ROLLBACK PREPARED]
-    D --> F([every shard changed])
-    E --> G([no shard changed])
-```
+Phase 1: the coordinator asks every participant to prepare. Each does its work and votes.
+Phase 2: unanimous YES means `COMMIT PREPARED` everywhere, any NO means `ROLLBACK PREPARED` everywhere.
 
 A YES vote is binding. `PREPARE TRANSACTION` writes the transaction to disk before the
 participant answers, so it can still commit after a crash. Whatever the coordinator
@@ -188,27 +181,6 @@ curl -X POST localhost:8000/order -H 'content-type: application/json' -d '{"prod
 
 ---
 
-## A participant's life, per transaction
-
-```mermaid
-stateDiagram-v2
-    [*] --> Working: POST /prepare
-    Working --> Prepared: work OK, PREPARE TRANSACTION (vote YES)
-    Working --> Aborted: work failed, ROLLBACK (vote NO)
-    Prepared --> Committed: POST /commit, COMMIT PREPARED
-    Prepared --> Aborted: POST /rollback, ROLLBACK PREPARED
-    Committed --> [*]
-    Aborted --> [*]
-
-    note right of Prepared
-        Durable on disk.
-        Survives restart.
-        Locks held until phase 2.
-    end note
-```
-
----
-
 ## Look at the in-between state
 
 Between the phases the transaction is prepared but not committed. Postgres lists these
@@ -232,19 +204,7 @@ docker compose exec inventory-db psql -U postgres -c 'select gid, prepared from 
  c314…-9262-ab717c8e70c1              | 2026-08-16 16:21:03.10141+00
 ```
 
-```
-time ─────────────────────────────────────────────────────────────────▶
-
-  coordinator   ├─ prepare ─┤          (pause)          ├─ commit ─┤
-  products-db   ├─ PREPARED ══════════════════════════════╡ committed
-  inventory-db     ├─ PREPARED ═══════════════════════════════╡ committed
-  orders-db           ├─ PREPARED ════════════════════════════════╡ committed
-                                    ▲
-                                    │  pg_prepared_xacts shows 1 row here
-                                    │  row for product 1 is locked here
-```
-
-Ten seconds later it commits and the row is gone.
+While that row exists, product 1 is locked in `inventory`. Ten seconds later it commits and the row is gone.
 
 ---
 
@@ -258,16 +218,7 @@ sleep 2
 docker compose kill coordinator
 ```
 
-```mermaid
-sequenceDiagram
-    participant Co as coordinator
-    participant I as inventory-db
-
-    Co->>I: PREPARE TRANSACTION 'txid'
-    I-->>Co: yes
-    Note over Co: crashes before phase 2
-    Note over I: prepared xact still there<br/>row for product 1 still locked<br/>waiting for a decision that never comes
-```
+Every shard has prepared. The coordinator dies before sending a decision.
 
 ```sh
 docker compose exec inventory-db psql -U postgres -c 'select gid from pg_prepared_xacts'
