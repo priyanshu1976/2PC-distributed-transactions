@@ -179,6 +179,10 @@ Third case, a product that does not exist:
 curl -X POST localhost:8000/order -H 'content-type: application/json' -d '{"product_id":99,"qty":1}'
 ```
 
+All three runs, as seen in `docker compose up`:
+
+![2PC logs: commit, rollback on missing stock, rollback on missing product](2pc.png)
+
 ---
 
 ## Look at the in-between state
