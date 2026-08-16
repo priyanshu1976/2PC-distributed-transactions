@@ -1,0 +1,45 @@
+services:
+  # ---- one Postgres shard per service; max_prepared_transactions > 0 enables 2PC ----
+  products-db:
+    image: postgres:16
+    command: postgres -c max_prepared_transactions=10
+    environment: { POSTGRES_PASSWORD: postgres }
+    volumes: [ ./init/products.sql:/docker-entrypoint-initdb.d/init.sql ]
+    healthcheck: { test: pg_isready -U postgres, interval: 2s, retries: 15 }
+  inventory-db:
+    image: postgres:16
+    command: postgres -c max_prepared_transactions=10
+    environment: { POSTGRES_PASSWORD: postgres }
+    volumes: [ ./init/inventory.sql:/docker-entrypoint-initdb.d/init.sql ]
+    healthcheck: { test: pg_isready -U postgres, interval: 2s, retries: 15 }
+  orders-db:
+    image: postgres:16
+    command: postgres -c max_prepared_transactions=10
+    environment: { POSTGRES_PASSWORD: postgres }
+    volumes: [ ./init/orders.sql:/docker-entrypoint-initdb.d/init.sql ]
+    healthcheck: { test: pg_isready -U postgres, interval: 2s, retries: 15 }
+
+  # ---- three participants, same code, different ROLE ----
+  products:
+    build: .
+    command: npx tsx participant.ts
+    environment: { ROLE: products }
+    depends_on: { products-db: { condition: service_healthy } }
+  inventory:
+    build: .
+    command: npx tsx participant.ts
+    environment: { ROLE: inventory }
+    depends_on: { inventory-db: { condition: service_healthy } }
+  orders:
+    build: .
+    command: npx tsx participant.ts
+    environment: { ROLE: orders }
+    depends_on: { orders-db: { condition: service_healthy } }
+
+  # ---- coordinator ----
+  coordinator:
+    build: .
+    command: npx tsx coordinator.ts
+    environment: { PAUSE_BEFORE_PHASE2_MS: 0 }
+    ports: [ "8000:8000" ]
+    depends_on: [ products, inventory, orders ]

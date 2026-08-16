@@ -1,0 +1,16 @@
+{
+  "name": "2pc-demo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "express": "^4.21.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/pg": "^8",
+    "tsx": "^4",
+    "typescript": "^5",
+    "@types/express": "^4"
+  }
+}
